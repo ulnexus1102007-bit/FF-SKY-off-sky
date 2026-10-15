@@ -14,7 +14,7 @@ Tienda en Next.js preparada para desplegar en Vercel y usar Supabase como catál
 2. Copia `.env.example` a `.env.local` y pega la URL y la clave anon/public del proyecto.
 3. En Supabase Authentication, crea un usuario de acceso para quien administrará la tienda. En su `app_metadata`, agrega `{ "role": "admin" }`. El panel no permite registro público.
 4. Inicia la tienda y entra a `/admin`. Usa ese correo y contraseña para iniciar sesión.
-5. Desde el panel puedes subir y editar productos, cargar imágenes y videos, crear categorías que aparecen como filtros y actualizar WhatsApp, las cuentas de Nequi y Banco Nu, y las URLs de Instagram, TikTok y Facebook.
+5. Desde el panel puedes subir y editar productos, cargar varias imágenes y un video por prenda, definir descripción, tallas, colores y precios, crear categorías que aparecen como filtros y actualizar WhatsApp, las cuentas de Nequi y Banco Nu, y las URLs de Instagram, TikTok y Facebook.
 
 Las fotos y videos se almacenan en el bucket público `product-media` (MP4, WebM o QuickTime, hasta 100 MB). La tienda muestra los productos activos, sus filtros, redes sociales y datos de pago. Las políticas RLS permiten cambios solo a sesiones autenticadas cuyo rol de `app_metadata` sea `admin`. No publiques la clave `service_role` en el navegador.
 

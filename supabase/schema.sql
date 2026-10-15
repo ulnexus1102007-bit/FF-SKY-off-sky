@@ -8,12 +8,19 @@ create table if not exists public.products (
   price integer not null check (price >= 0),
   old_price integer,
   image_url text not null,
+  gallery_urls text[] not null default '{}',
   video_url text,
+  description text not null default '',
+  sizes text[] not null default '{}',
   tag text,
   colors text[] not null default '{}',
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+alter table public.products add column if not exists gallery_urls text[] not null default '{}';
+alter table public.products add column if not exists description text not null default '';
+alter table public.products add column if not exists sizes text[] not null default '{}';
 
 create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
