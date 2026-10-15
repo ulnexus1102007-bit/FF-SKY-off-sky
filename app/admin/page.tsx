@@ -19,6 +19,9 @@ export default function AdminPage() {
   const [authorized, setAuthorized] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"signin" | "signup" | "forgot" | "update">("signin");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState("dashboard");
@@ -32,7 +35,10 @@ export default function AdminPage() {
   useEffect(() => {
     if (!supabase) { setSessionReady(true); return; }
     supabase.auth.getSession().then(({ data }) => checkUser(data.session?.user ?? null));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { void checkUser(session?.user ?? null); });
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") setAuthMode("update");
+      void checkUser(session?.user ?? null);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -40,6 +46,7 @@ export default function AdminPage() {
     setSessionReady(true);
     const isAdmin = user?.app_metadata?.role === "admin";
     setAuthorized(Boolean(isAdmin)); setUserEmail(isAdmin ? user?.email || "" : "");
+    if (user && !isAdmin) setError("La cuenta inicio sesion, pero no tiene permisos de administrador. En Supabase asigna app_metadata.role = admin al usuario.");
     if (isAdmin) await loadData();
   }
 
@@ -59,7 +66,39 @@ export default function AdminPage() {
     e.preventDefault(); setError("");
     if (!supabase) return setError("Configura las variables de Supabase para activar el administrador.");
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError) setError(authError.message);
+    if (authError) setError(authError.message === "Invalid login credentials" ? "Correo o contrasena incorrectos. Verifica que el usuario exista en Supabase y que su correo este confirmado." : authError.message);
+  }
+
+  async function signUp(e: FormEvent) {
+    e.preventDefault(); setError(""); setMessage("");
+    if (!supabase) return setError("Configura las variables de Supabase para crear una cuenta.");
+    if (password.length < 8) return setError("Usa una contrasena de al menos 8 caracteres.");
+    setBusy(true);
+    const { error: signUpError } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/admin` } });
+    if (signUpError) setError(signUpError.message);
+    else { setMessage("Cuenta creada. Revisa tu correo para confirmar. Para entrar al admin, asigna el rol admin a este usuario en Supabase."); setAuthMode("signin"); setPassword(""); }
+    setBusy(false);
+  }
+
+  async function sendPasswordReset(e: FormEvent) {
+    e.preventDefault(); setError(""); setMessage("");
+    if (!supabase) return setError("Supabase no esta configurado.");
+    setBusy(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/admin` });
+    if (resetError) setError(resetError.message); else setMessage("Si el correo esta registrado, recibiras un enlace para cambiar la contrasena.");
+    setBusy(false);
+  }
+
+  async function updatePassword(e: FormEvent) {
+    e.preventDefault(); setError(""); setMessage("");
+    if (!supabase) return setError("Supabase no esta configurado.");
+    if (newPassword.length < 8) return setError("La nueva contrasena debe tener al menos 8 caracteres.");
+    if (newPassword !== confirmPassword) return setError("Las contrasenas no coinciden.");
+    setBusy(true);
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateError) setError(updateError.message);
+    else { setMessage("Contrasena actualizada. Ya puedes iniciar sesion."); await supabase.auth.signOut(); setAuthMode("signin"); setPassword(""); setNewPassword(""); setConfirmPassword(""); }
+    setBusy(false);
   }
 
   async function signOut() { await supabase?.auth.signOut(); setAuthorized(false); }
@@ -118,7 +157,7 @@ export default function AdminPage() {
   }
 
   if (!sessionReady) return <div className="admin-loading">OFF—SKY / CARGANDO ADMIN</div>;
-  if (!authorized) return <main className="admin-login"><Link href="/" className="admin-back"><ArrowLeft size={15}/> VOLVER A LA TIENDA</Link><div className="login-card"><span className="admin-logo">OFF<span>—</span>SKY</span><p className="admin-kicker">PANEL DE CONTROL</p><h1>ENTRA AL<br/><em>BACKSTAGE.</em></h1><p className="login-desc">Acceso exclusivo para el equipo OFF-SKY.</p>{!supabase && <p className="admin-error">Configura Supabase para activar el inicio de sesión.</p>}<form onSubmit={signIn}><label>Correo electrónico</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="admin@off-sky.com"/><label>Contraseña</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••••"/><button className="admin-primary" disabled={!supabase}>INICIAR SESIÓN <ChevronRight size={16}/></button></form>{error && <p className="admin-error">{error}</p>}<small>El acceso se gestiona desde usuarios de Supabase.</small></div></main>;
+  if (!authorized || authMode === "update") return <main className="admin-login"><Link href="/" className="admin-back"><ArrowLeft size={15}/> VOLVER A LA TIENDA</Link><div className="login-card"><span className="admin-logo">OFF<span>—</span>SKY</span><p className="admin-kicker">PANEL DE CONTROL</p><h1>{authMode === "update" ? <>CAMBIA TU<br/><em>CONTRASENA.</em></> : authMode === "forgot" ? <>RECUPERA TU<br/><em>ACCESO.</em></> : authMode === "signup" ? <>CREA TU<br/><em>CUENTA.</em></> : <>ENTRA AL<br/><em>BACKSTAGE.</em></>}</h1><p className="login-desc">{authMode === "signup" ? "Crea tu usuario. Un administrador debe habilitar el acceso al panel." : "Acceso exclusivo para el equipo OFF-SKY."}</p>{!supabase && <p className="admin-error">Supabase no esta configurado en este despliegue.</p>}{authMode === "update" ? <form onSubmit={updatePassword}><label>Nueva contrasena</label><input type="password" minLength={8} autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required/><label>Confirma la contrasena</label><input type="password" minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required/><button className="admin-primary" disabled={!supabase || busy}>GUARDAR CONTRASENA <ChevronRight size={16}/></button></form> : authMode === "forgot" ? <form onSubmit={sendPasswordReset}><label>Correo de tu cuenta</label><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="admin@off-sky.com"/><button className="admin-primary" disabled={!supabase || busy}>ENVIAR ENLACE <ChevronRight size={16}/></button></form> : <form onSubmit={authMode === "signup" ? signUp : signIn}><label>Correo electronico</label><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="admin@off-sky.com"/><label>Contrasena</label><input type="password" minLength={authMode === "signup" ? 8 : undefined} autoComplete={authMode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Minimo 8 caracteres"/><button className="admin-primary" disabled={!supabase || busy}>{authMode === "signup" ? "CREAR CUENTA" : "INICIAR SESION"} <ChevronRight size={16}/></button></form>}{error && <p className="admin-error" role="alert">{error}</p>}{message && <p className="admin-auth-message" role="status">{message}</p>}<div className="auth-links">{authMode !== "signin" && <button type="button" onClick={() => { setAuthMode("signin"); setError(""); }}>Volver a iniciar sesion</button>}{authMode === "signin" && <><button type="button" onClick={() => { setAuthMode("forgot"); setError(""); setMessage(""); }}>Olvide mi contrasena</button><button type="button" onClick={() => { setAuthMode("signup"); setError(""); setMessage(""); }}>Crear usuario</button></>}</div><small>El acceso de administrador se asigna desde Supabase; el registro no concede permisos automaticamente.</small></div></main>;
 
   const nav = [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "products", label: "Productos", icon: Box }, { id: "categories", label: "Categorías y filtros", icon: FolderOpen }, { id: "settings", label: "Tienda y pagos", icon: Settings }];
   return <main className="admin-shell"><aside className="admin-sidebar"><Link href="/" className="admin-logo">OFF<span>—</span>SKY</Link><p className="admin-kicker">STUDIO / ADMIN</p><nav>{nav.map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => { setTab(item.id); setEditing(null); }}><item.icon size={17}/>{item.label}</button>)}</nav><div className="sidebar-bottom"><span><i/> {userEmail}</span><button onClick={signOut}><LogOut size={15}/> Cerrar sesión</button><Link href="/" className="store-link"><Eye size={15}/> Ver tienda</Link></div></aside>
